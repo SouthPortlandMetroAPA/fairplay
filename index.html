@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.2)
+  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.3)
   ─────────────────────────────────────────────────────────────────────────────
   Brief: tools/claude/briefs/2026-09-18-fairplay.md  (T1)
   WHO   a signed-in member (magic link → durable device session, SkillCheck/NickPick/CrewCall model).
@@ -156,10 +156,10 @@
     const go = () => {
       const teams = S.me.teams || [];
       /* One card per NIGHT: an 8-Ball + 9-Ball pair (same team name, same opponent, same date) is one match night. */
-      const matches = [], seen = {}; teams.forEach(t => (t.weeks || []).forEach(w => { const k = String(w.date) + '|' + String(w.opponent_name).toLowerCase() + '|' + String(t.team_name).toLowerCase(); if (seen[k]) return; seen[k] = 1; matches.push({ t, w }); }));
+      const matches = [], seen = {}; teams.forEach(t => (t.weeks || []).forEach(w => { const k = String(w.date) + '|' + String(w.opponent_name).toLowerCase() + '|' + String(t.team_name).toLowerCase(); if (seen[k]) { seen[k].both = true; return; } seen[k] = { t, w, both: false }; matches.push(seen[k]); }));
       matches.sort((a, b) => String(b.w.date).localeCompare(String(a.w.date)) || (b.w.week - a.w.week));
-      app.innerHTML = '<label class="lbl" style="margin-top:4px">Which match was it?</label><p class="sub">Your played nights, newest first. Tap the one it happened at.</p>'
-        + (matches.length ? matches.map((m, i) => '<button type="button" class="match" data-i="' + i + '"><b>vs ' + esc(m.w.opponent_name) + '</b><span>Week ' + esc(m.w.week) + ' · ' + esc(fmtDate(m.w.date)) + ' · ' + (m.w.home ? 'home' : 'away') + (m.w.venue ? ' at ' + esc(m.w.venue) : '') + (teams.length > 1 ? ' · ' + esc(m.t.team_name) : '') + '</span></button>').join('') : '<p class="sub">We don\'t see any played matches for you yet this session.</p>')
+      app.innerHTML = '<label class="lbl" style="margin-top:4px">Which match was it?</label><p class="sub">Your played nights, newest first. Tap the one it happened at.</p><div class="err" id="err"></div>'
+        + (matches.length ? matches.map((m, i) => '<button type="button" class="match" data-i="' + i + '"><b>vs ' + esc(m.w.opponent_name) + '</b><span>Week ' + esc(m.w.week) + ' · ' + esc(fmtDate(m.w.date)) + ' · ' + (m.w.home ? 'home' : 'away') + (m.w.venue ? ' at ' + esc(m.w.venue) : '') + (teams.length > 1 ? ' · ' + esc(m.t.team_name) : '') + (m.both ? ' · 8 &amp; 9-Ball night' : '') + '</span></button>').join('') : '<p class="sub">We don\'t see any played matches for you yet this session.</p>')
         + '<button class="btn ghost" id="notMatch">It wasn\'t during one of my matches</button>'
         + '<button class="btn ghost" id="back" style="margin-top:8px">Back</button>';
       app.querySelectorAll('.match').forEach(b => b.onclick = () => { const m = matches[+b.dataset.i]; S.myTeam = m.t; S.week = m.w.week; S.match = m.w; loadSubject(m.w.opponent_number); });
@@ -181,7 +181,7 @@
   }
   function loadSubject(teamNumber) {
     app.innerHTML = '<div style="padding:20px;text-align:center"><span class="spin"></span></div>';
-    gas('fp_roster', { token: S.token, team_number: teamNumber }).then(r => { if (!r.ok) { if (/session/i.test(r.error || '')) return handleSessionErr(r.error); return showWhen(); } S.subject = r.team; showForm(); });
+    gas('fp_roster', { token: S.token, team_number: teamNumber }).then(r => { if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); showWhen(); const e = $('err'); if (e) e.textContent = r.error || 'Could not load that team.'; return; } S.subject = r.team; showForm(); });
   }
   function chipRow(id, items, multi, cls) { return '<div class="chips" id="' + id + '">' + items.map(([v, l]) => '<button type="button" class="chip' + (cls && cls(v) ? ' warn' : '') + '" data-v="' + esc(v) + '" aria-pressed="false">' + esc(l) + '</button>').join('') + '</div>'; }
   function wireChips(id, onPick, multi) { $(id).querySelectorAll('.chip').forEach(b => b.onclick = () => { if (multi) { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); } else { $(id).querySelectorAll('.chip').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false')); } onPick(b.dataset.v, b.getAttribute('aria-pressed') === 'true'); sync(); }); }
@@ -225,12 +225,14 @@
     const r = await gas('fp_submit', { token: S.token, my_team_number: S.myTeam ? S.myTeam.team_number : null, week: S.week || 0, subject_team_number: S.subject.team_number,
       whole_team: S.wholeTeam, players: [...S.players], unknown_player: S.unknownOn ? $('unknown').value.trim() : '', behaviours: [...S.behaviours], severity: S.severity, captain_state: S.captain, scoresheet: S.stars, wanted: S.wanted,
       witnesses: [...S.witnesses], witnesses_text: $('witText').value.trim(), narrative: $('story').value.trim(), extra: $('extra').value.trim(), ack: S.acked, hp: $('hp').value, fill_ms: Date.now() - S.opened });
-    if (!r.ok) { if (/session/i.test(r.error || '')) return handleSessionErr(r.error); err.textContent = r.error || 'Something went wrong. Try again.'; sync(); return; }
+    if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); err.textContent = r.error || 'Something went wrong. Try again.'; sync(); return; }
     app.innerHTML = '<div style="text-align:center;padding:16px 4px"><div style="font-size:2.4rem">🤝</div><h2 style="margin:6px 0">Got it' + (r.id ? ' — report #' + esc(r.id) : '') + '.</h2><p class="lead">The league office reads every report and keeps your name out of it. You\'ll hear back within a week. A receipt is in your email — reply to it with photos or screenshots if you have any.</p><button class="btn ghost" id="home">Done</button></div>';
     $('home').onclick = showHome;
   }
 
   /* ── session ── */
+  /* only the auth sentences log you out — 'between seasons' etc. are ordinary errors (fresh-eyes finding, 2026-09-18) */
+  const isAuthErr = e => /session is no longer valid|sign in again|signed out/i.test(e || '');
   function handleSessionErr(msg) { try { localStorage.removeItem(SKEY); } catch (e) {} S.token = null; S.me = null; showLogin(msg || 'Your session expired. Sign in again.'); }
   $('logout').onclick = () => { gas('fp_logout', { token: S.token }); try { localStorage.removeItem(SKEY); } catch (e) {} S.token = null; S.firstName = ''; S.me = null; showLogin(); };
   function boot() {

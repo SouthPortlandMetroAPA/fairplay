@@ -1,4 +1,0 @@
-/* FairPlay — single global version constant (CountMeIn/version.js pattern).
-   Deploy: bump here → git push → poll the served version.js → UPDATE apa_core.apps
-   SET version=$NEW WHERE app_name='FairPlay'  (serve-then-bump, reference_deploy.md). */
-window.APP_VERSION = '0.3';
