@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.1)
+  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.2)
   ─────────────────────────────────────────────────────────────────────────────
   Brief: tools/claude/briefs/2026-09-18-fairplay.md  (T1)
   WHO   a signed-in member (magic link → durable device session, SkillCheck/NickPick/CrewCall model).
@@ -41,7 +41,7 @@
   .chips{ display:flex; flex-wrap:wrap; gap:8px; }
   .chip{ border:2px solid var(--border); background:#fff; border-radius:999px; padding:10px 14px; font:inherit; font-size:.95rem; min-height:48px; cursor:pointer; color:var(--text); text-align:left; }
   .chip[aria-pressed="true"]{ border-color:var(--spm-accent); background:#eef2ff; color:var(--spm-accent); font-weight:700; }
-  .chip.warn[aria-pressed="true"]{ border-color:var(--spm-primary); background:#fff0f2; color:var(--spm-primary); }
+  .chip.warn[aria-pressed="true"]{ border-color:var(--spm-primary); background:#fff0f2; color:#b8001f; }   /* #b8001f on #fff0f2 = 5.3:1 (brand red was 4.19, below AA) */
   .btn{ width:100%; font:inherit; font-weight:800; font-size:1.05rem; border:none; border-radius:999px; padding:15px 20px; min-height:54px; cursor:pointer; background:linear-gradient(135deg,var(--spm-primary),var(--spm-accent)); color:#fff; margin-top:14px; }
   .btn:disabled{ background:#c9ccd6; cursor:not-allowed; }
   .btn.ghost{ background:#fff; color:var(--text); border:2px solid var(--border); }
