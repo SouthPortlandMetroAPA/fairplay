@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<!--
+  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.1)
+  ─────────────────────────────────────────────────────────────────────────────
+  Brief: tools/claude/briefs/2026-09-18-fairplay.md  (T1)
+  WHO   a signed-in member (magic link → durable device session, SkillCheck/NickPick/CrewCall model).
+  WHAT  a short context note (rubric-scored, see brief) → which match (from MY schedule: week · date ·
+        opponent · home/away · venue) or "not during one of my matches" → any SPM team → WHO was involved
+        (whole team · players picked from THAT team's roster · a player I can't name) → what happened (tap all)
+        → how bad → their captain → who else saw it (my teammates from the roster) → scoresheet stars
+        → what would make it right → what happened (min 80 chars) → anything else.
+        Question set derived from our complaint inbox + Team Manual Section 6 + two operators' forms +
+        procedural-justice / ISO 10002 guidance (voice · acknowledgement · expectation · close-out).
+  DATA  everything goes through the apa-mailer GAS (text/plain POST, never application/json):
+        fp_link_request · fp_verify · fp_logout · fp_context · fp_roster · fp_submit · fp_my.
+        No direct Supabase reads except the updater row. Players are never free-typed: rosters come from the record.
+  MAIL  link (to the address on file) · receipt to the reporter (restates the report + "within a week")
+        · office notify (URGENT prefix on unsafe / physical / threats). Resolutions come from Slate ▸ Sportsmanship.
+        The reported team / players are never emailed by this app and never told who reported.
+  Brand: spm-base.css. Auto-updater: apa_core.apps row "FairPlay" → version.js (serve-then-bump).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>FairPlay — South Portland Metro APA</title>
+<meta name="theme-color" content="#ea002a">
+<link rel="stylesheet" href="https://southportlandmetroapa.github.io/shared/spm-base.css">
+<script src="version.js"></script>
+<style>
+  [hidden]{ display:none !important; }
+  .spm-page{ max-width:560px; }
+  .lead{ color:var(--muted); margin:2px 0 14px; font-size:.98rem; }
+  .lbl{ font-weight:800; font-size:1.02rem; margin:18px 0 6px; display:block; color:var(--text); }
+  .lbl small{ font-weight:400; color:var(--muted); font-size:.85rem; }
+  .sub{ color:var(--muted); font-size:.88rem; margin:0 0 8px; }
+  input[type=text],input[type=email],select,textarea{ width:100%; font:inherit; padding:13px 14px; border:2px solid var(--border); border-radius:12px; background:#fff; min-height:48px; color:var(--text); box-sizing:border-box; }
+  textarea{ min-height:130px; resize:vertical; }
+  input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--spm-accent); }
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{ border:2px solid var(--border); background:#fff; border-radius:999px; padding:10px 14px; font:inherit; font-size:.95rem; min-height:48px; cursor:pointer; color:var(--text); text-align:left; }
+  .chip[aria-pressed="true"]{ border-color:var(--spm-accent); background:#eef2ff; color:var(--spm-accent); font-weight:700; }
+  .chip.warn[aria-pressed="true"]{ border-color:var(--spm-primary); background:#fff0f2; color:var(--spm-primary); }
+  .btn{ width:100%; font:inherit; font-weight:800; font-size:1.05rem; border:none; border-radius:999px; padding:15px 20px; min-height:54px; cursor:pointer; background:linear-gradient(135deg,var(--spm-primary),var(--spm-accent)); color:#fff; margin-top:14px; }
+  .btn:disabled{ background:#c9ccd6; cursor:not-allowed; }
+  .btn.ghost{ background:#fff; color:var(--text); border:2px solid var(--border); }
+  .err{ color:var(--spm-primary); font-size:.92rem; min-height:1.2em; margin:8px 0 0; }
+  .fine{ color:var(--muted); font-size:.82rem; text-align:center; margin:10px 0 0; }
+  .hp{ position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+  .rec{ display:flex; align-items:center; gap:12px; border:2px solid var(--border); border-radius:14px; padding:12px 14px; background:#fbfbfd; }
+  .rec .who{ flex:1; } .rec .who b{ display:block; font-size:1.02rem; }
+  .ctl{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:0 0 10px; }
+  .ctl button{ background:none; border:none; color:var(--spm-accent); font:inherit; font-weight:700; cursor:pointer; min-height:40px; padding:6px 0; }
+  .card-list .row{ border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin-bottom:8px; font-size:.92rem; }
+  .tag{ display:inline-block; font-size:.7rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:999px; background:#fff3cd; color:#7a5a00; }
+  .tag.review{ background:#e7edfb; color:#0031a1; } .tag.done{ background:#e6f7ec; color:#0a7d33; }
+  /* match list — one tap per played night */
+  .match{ display:block; width:100%; text-align:left; border:2px solid var(--border); background:#fff; border-radius:14px; padding:12px 14px; margin-bottom:8px; font:inherit; cursor:pointer; min-height:56px; color:var(--text); }
+  .match b{ display:block; font-size:1rem; } .match span{ color:var(--muted); font-size:.86rem; }
+  .match:hover{ border-color:var(--spm-accent); }
+  /* the context note — a modal on top of the form */
+  .note-back{ position:fixed; inset:0; background:rgba(20,30,50,.55); z-index:200; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .note{ background:#fff; border-radius:18px; max-width:420px; width:100%; padding:20px 20px 18px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .note h2{ margin:0 0 10px; font-size:1.15rem; }
+  .note p{ margin:0 0 12px; font-size:17px; line-height:1.5; }   /* 17px: bigger reads faster at a glance (NN/g) */
+  .note .btn{ margin-top:6px; }
+  .spin{ display:inline-block; width:26px; height:26px; border:3px solid #e5e7eb; border-top-color:var(--spm-primary); border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #updateOverlay{ position:fixed; inset:0; background:rgba(255,255,255,.96); z-index:9999; display:none; align-items:center; justify-content:center; flex-direction:column; gap:14px; text-align:center; padding:24px; }
+  #updateOverlay.show{ display:flex; }
+</style>
+</head>
+<body>
+  <div id="updateOverlay"><div class="spin"></div><div><b>Updating…</b><br>Grabbing the latest version.</div></div>
+  <div class="spm-page">
+    <header class="spm-header">
+      <h1>FairPlay 🤝</h1>
+      <p class="spm-subtitle">South Portland Metro APA · report a sportsmanship issue</p>
+    </header>
+    <main class="spm-card">
+      <div class="ctl" id="ctl" hidden><span id="whoami" class="sub" style="margin:0"></span><button type="button" id="logout">Log out</button></div>
+      <div id="app"></div>
+    </main>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbzGTzkBRTrIIP_tD6sbtOOUmNZkXDdtxPoO4c8fdWt5h3tZFueNSISPv8Q3LWStx73Whw/exec';
+  const SB_URL = 'https://dqzbekoaysgaiqljueac.supabase.co';
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxemJla29heXNnYWlxbGp1ZWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNzA5NzgsImV4cCI6MjA5MDc0Njk3OH0.cCdGxZ4zEFzU_r6lWSDeoNWG67Q4MSYCAtpds035dfU';
+  const APP_NAME = 'FairPlay';
+  const SKEY = 'fairplay.session.v1';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  /* GAS: text/plain body, never application/json (CORS preflight GAS cannot answer) */
+  const gas = (action, extra) => fetch(GAS_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, extra || {})) }).then(r => r.json()).catch(() => ({ ok: false, error: 'Network hiccup. Check your connection and try again.' }));
+  const S = { token: null, firstName: '', me: null, allTeams: [], myTeam: null, week: 0, match: null, subject: null, acked: false, opened: Date.now(),
+              wholeTeam: false, players: new Set(), unknownOn: false, behaviours: new Set(), severity: null, captain: null, witnesses: new Set(), stars: null, wanted: null };
+  const app = $('app');
+  /* Closed items — labels mirror the GAS FP_* maps; codes are what the server stores. */
+  const BEHAVIOURS = [['language', 'Rude or hostile language'], ['threats', 'Threats or intimidation'], ['physical', 'Physical contact'], ['rules', 'Arguing calls or refusing rules'], ['distracting', 'Distracting while shooting (talking, music, line of sight)'], ['handshake', 'Refused handshake / stormed off'], ['impaired', 'Drunk or impaired'], ['harassment', 'Harassment (in person or messages)'], ['venue', 'Seats, tables or venue dispute'], ['other', 'Something else']];
+  const SEVERITY = [['uncomfortable', 'Made people uncomfortable'], ['disrupted', 'Disrupted the match'], ['unsafe', 'Someone felt unsafe or threatened']];
+  const CAPTAIN = [['helpful', 'There and helped calm it'], ['unhelpful', 'There and did not help'], ['absent', 'Not there'], ['unsure', 'Not sure']];
+  const STARS = [['low', 'Yes — 1 or 2 stars'], ['ok', 'Yes — 3 or more'], ['no', 'No'], ['unsure', 'Not sure']];
+  const WANTED = [['note', 'Just note it for their file'], ['talk', 'Have a word with them'], ['action', 'Take action']];
+  const fmtDate = d => { if (!d) return ''; const p = String(d).split('-'); if (p.length !== 3) return d; const dt = new Date(+p[0], +p[1] - 1, +p[2]); return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' }); };
+
+  /* ── screens ── */
+  function showLogin(msg) {
+    $('ctl').hidden = true;
+    app.innerHTML = '<p class="lead">Something happen on league night that should not have? Tell the league office here. Sign in with the email or APA number on your record; we send a link, no password.</p>'
+      + (msg ? '<div class="err" style="margin-bottom:8px">' + esc(msg) + '</div>' : '')
+      + '<label class="lbl" for="ident">Your email or APA number</label><input id="ident" type="text" autocomplete="email" inputmode="email" placeholder="you@example.com or 12345678">'
+      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true">'
+      + '<div class="err" id="err"></div><button class="btn" id="send">Email me a sign-in link</button>'
+      + '<p class="fine">The link goes only to the email on your APA record.</p>';
+    $('send').onclick = async () => {
+      const v = $('ident').value.trim(); if (!v) { $('err').textContent = 'Enter your email or APA number.'; return; }
+      $('send').disabled = true; $('err').textContent = '';
+      const r = await gas('fp_link_request', { identifier: v, hp: $('hp').value });
+      if (!r.ok) { $('err').textContent = r.error || 'Something went wrong.'; $('send').disabled = false; return; }
+      app.innerHTML = '<h2 style="margin:0 0 6px">Check your email' + (r.first_name ? ', ' + esc(r.first_name) : '') + '.</h2><p class="lead">We sent a sign-in link to the address on your APA record. It works for 30 minutes and keeps you signed in on this device.</p><button class="btn ghost" id="again">Use a different email or number</button>';
+      $('again').onclick = () => showLogin();
+    };
+  }
+  function showHome() {
+    $('ctl').hidden = false; $('whoami').textContent = S.firstName ? 'Signed in as ' + S.firstName : 'Signed in';
+    S.myTeam = null; S.week = 0; S.match = null; S.subject = null; S.wholeTeam = false; S.players = new Set(); S.unknownOn = false; S.behaviours = new Set(); S.severity = null; S.captain = null; S.witnesses = new Set(); S.stars = null; S.wanted = null;
+    app.innerHTML = '<p class="lead">Report a sportsmanship issue about a team, a player, or a few players on a team. It goes straight to the league office and stays private.</p>'
+      + '<button class="btn" id="start">Report an issue</button>'
+      + '<div id="mine" class="card-list" style="margin-top:22px"></div>';
+    $('start').onclick = showNote;
+    gas('fp_my', { token: S.token }).then(r => {
+      if (!r.ok || !r.reports || !r.reports.length) return;
+      const tag = q => q.status === 'resolved' ? '<span class="tag done">' + esc({ noted: 'noted on file', spoke: 'we spoke with them', action: 'action taken', no_action: 'no action' }[q.resolution] || 'resolved') + '</span>' : q.status === 'in_review' ? '<span class="tag review">looking into it</span>' : '<span class="tag">received</span>';
+      $('mine').innerHTML = '<span class="lbl">Your reports</span>' + r.reports.map(q => '<div class="row">' + tag(q) + ' #' + q.id + ' · ' + esc(q.subject_team_name) + (q.week_number ? ' · week ' + q.week_number : '') + ' · ' + new Date(q.created_at).toLocaleDateString()
+        + (q.resolution_note ? '<div class="sub" style="margin:4px 0 0">' + esc(q.resolution_note) + '</div>' : '') + '</div>').join('');
+    });
+  }
+  /* The context note — the one screen every report passes through (rubric-scored, brief 2026-09-18-fairplay).
+     Glanceable (NN/g): three lines, each front-loaded with a bold lead that carries the meaning alone; 17px; one action. */
+  function showNote() {
+    S.acked = false; S.opened = Date.now();
+    const back = document.createElement('div'); back.className = 'note-back'; back.id = 'noteBack'; back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-labelledby', 'noteTitle');
+    back.innerHTML = '<div class="note"><h2 id="noteTitle">Before you start</h2>'
+      + '<p><b>Bad nights happen.</b> Report what you saw and heard, not what you assume.</p>'
+      + '<p><b>Name who.</b> A team alone is hard to act on; pick the players if you can.</p>'
+      + '<p><b>We read every one.</b> The other team never sees your name. You\'ll hear back within a week.</p>'
+      + '<button class="btn" id="gotit">Got it</button></div>';
+    document.body.appendChild(back);
+    $('gotit').onclick = () => { S.acked = true; back.remove(); showWhen(); };
+    $('gotit').focus();
+  }
+  function showWhen() {
+    app.innerHTML = '<div style="padding:20px;text-align:center"><span class="spin"></span></div>';
+    const go = () => {
+      const teams = S.me.teams || [];
+      /* One card per NIGHT: an 8-Ball + 9-Ball pair (same team name, same opponent, same date) is one match night. */
+      const matches = [], seen = {}; teams.forEach(t => (t.weeks || []).forEach(w => { const k = String(w.date) + '|' + String(w.opponent_name).toLowerCase() + '|' + String(t.team_name).toLowerCase(); if (seen[k]) return; seen[k] = 1; matches.push({ t, w }); }));
+      matches.sort((a, b) => String(b.w.date).localeCompare(String(a.w.date)) || (b.w.week - a.w.week));
+      app.innerHTML = '<label class="lbl" style="margin-top:4px">Which match was it?</label><p class="sub">Your played nights, newest first. Tap the one it happened at.</p>'
+        + (matches.length ? matches.map((m, i) => '<button type="button" class="match" data-i="' + i + '"><b>vs ' + esc(m.w.opponent_name) + '</b><span>Week ' + esc(m.w.week) + ' · ' + esc(fmtDate(m.w.date)) + ' · ' + (m.w.home ? 'home' : 'away') + (m.w.venue ? ' at ' + esc(m.w.venue) : '') + (teams.length > 1 ? ' · ' + esc(m.t.team_name) : '') + '</span></button>').join('') : '<p class="sub">We don\'t see any played matches for you yet this session.</p>')
+        + '<button class="btn ghost" id="notMatch">It wasn\'t during one of my matches</button>'
+        + '<button class="btn ghost" id="back" style="margin-top:8px">Back</button>';
+      app.querySelectorAll('.match').forEach(b => b.onclick = () => { const m = matches[+b.dataset.i]; S.myTeam = m.t; S.week = m.w.week; S.match = m.w; loadSubject(m.w.opponent_number); });
+      $('notMatch').onclick = showTeamPick;
+      $('back').onclick = showHome;
+    };
+    if (S.me) return go();
+    gas('fp_context', { token: S.token }).then(r => { if (!r.ok) return handleSessionErr(r.error); S.me = r.me; S.allTeams = r.all_teams || []; go(); });
+  }
+  function showTeamPick() {
+    S.myTeam = (S.me.teams || []).length === 1 ? S.me.teams[0] : null; S.week = 0; S.match = null;
+    const divs = {}; S.allTeams.forEach(t => { const k = t.division_name || 'Other'; (divs[k] = divs[k] || []).push(t); });
+    app.innerHTML = '<label class="lbl" for="teamSel" style="margin-top:4px">Which team is this about?</label><p class="sub">Every South Portland Metro team this session, by division.</p>'
+      + '<select id="teamSel"><option value="">Pick a team…</option>' + Object.keys(divs).sort().map(d => '<optgroup label="' + esc(d) + '">' + divs[d].map(t => '<option value="' + esc(t.team_number) + '">' + esc(t.team_name) + ' (' + esc(t.team_number) + ')</option>').join('') + '</optgroup>').join('') + '</select>'
+      + '<div class="err" id="err"></div><button class="btn" id="next" disabled>Next</button><button class="btn ghost" id="back">Back</button>';
+    $('teamSel').onchange = () => { $('next').disabled = !$('teamSel').value; };
+    $('next').onclick = () => loadSubject($('teamSel').value);
+    $('back').onclick = showWhen;
+  }
+  function loadSubject(teamNumber) {
+    app.innerHTML = '<div style="padding:20px;text-align:center"><span class="spin"></span></div>';
+    gas('fp_roster', { token: S.token, team_number: teamNumber }).then(r => { if (!r.ok) { if (/session/i.test(r.error || '')) return handleSessionErr(r.error); return showWhen(); } S.subject = r.team; showForm(); });
+  }
+  function chipRow(id, items, multi, cls) { return '<div class="chips" id="' + id + '">' + items.map(([v, l]) => '<button type="button" class="chip' + (cls && cls(v) ? ' warn' : '') + '" data-v="' + esc(v) + '" aria-pressed="false">' + esc(l) + '</button>').join('') + '</div>'; }
+  function wireChips(id, onPick, multi) { $(id).querySelectorAll('.chip').forEach(b => b.onclick = () => { if (multi) { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); } else { $(id).querySelectorAll('.chip').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false')); } onPick(b.dataset.v, b.getAttribute('aria-pressed') === 'true'); sync(); }); }
+  function showForm() {
+    const t = S.subject, m = S.match;
+    const myRoster = []; (S.me.teams || []).forEach(tm => { if (S.myTeam && tm.team_number !== S.myTeam.team_number) return; (tm.roster || []).forEach(p => { if (!myRoster.some(x => x.member_number === p.member_number)) myRoster.push(p); }); });
+    app.innerHTML = '<div class="rec"><div class="who"><b>' + esc(t.team_name) + ' (' + esc(t.team_number) + ')</b><span class="sub" style="margin:0">' + esc(t.division_name || '') + (m ? ' · week ' + esc(S.week) + ' · ' + esc(fmtDate(m.date)) + (m.venue ? ' · ' + esc(m.venue) : '') : ' · not during one of your matches') + '</span></div></div>'
+      + '<label class="lbl">Who was involved?</label><p class="sub">Tap the players. Names come from their roster.</p>'
+      + '<div class="chips" id="who"><button type="button" class="chip" data-v="__team" aria-pressed="false">The whole team</button>' + (t.roster || []).map(p => '<button type="button" class="chip" data-v="' + esc(p.member_number) + '" aria-pressed="false">' + esc(p.name) + '</button>').join('') + '<button type="button" class="chip" data-v="__unknown" aria-pressed="false">Someone I can\'t name</button></div>'
+      + '<div id="unknownWrap" hidden style="margin-top:8px"><input type="text" id="unknown" maxlength="300" placeholder="Describe them — e.g. tall guy in the red hat, shot third"></div>'
+      + '<label class="lbl">What happened? <small>tap all that apply</small></label>' + chipRow('beh', BEHAVIOURS, true, v => v === 'physical' || v === 'threats' || v === 'harassment')
+      + '<label class="lbl">How bad was it?</label>' + chipRow('sev', SEVERITY, false, v => v === 'unsafe')
+      + '<label class="lbl">Their captain was… <small>optional</small></label>' + chipRow('cap', CAPTAIN, false)
+      + '<label class="lbl">Who else saw it? <small>optional</small></label>' + (myRoster.length ? '<p class="sub">Your teammates, from the roster.</p>' + chipRow('wit', myRoster.map(p => [p.member_number, p.name]), true) : '') + '<input type="text" id="witText" maxlength="300" placeholder="Anyone else? (bartender, other team…)" style="margin-top:8px">'
+      + '<label class="lbl">Did you mark it on the scoresheet? <small>optional</small></label><p class="sub">The sportsmanship stars next to their name.</p>' + chipRow('stars', STARS, false)
+      + '<label class="lbl">What would make this right?</label>' + chipRow('want', WANTED, false)
+      + '<label class="lbl" for="story">Tell us what happened</label><p class="sub">What was said or done, by whom, in what order. Specifics are what let us act.</p><textarea id="story" maxlength="6000" placeholder="A few sentences."></textarea><div class="sub" id="storyCount">0 / 80 characters minimum</div>'
+      + '<label class="lbl" for="extra">Anything else? <small>optional</small></label><p class="sub">Photos or screenshots: reply to your receipt email with them attached.</p><textarea id="extra" maxlength="1000" style="min-height:70px" placeholder="Has this happened before, other context…"></textarea>'
+      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true"><div class="err" id="err"></div><button class="btn" id="submit" disabled>Send my report</button><p class="fine">Private. The other team is never told who reported.</p>'
+      + '<button class="btn ghost" id="back">Back</button>';
+    $('back').onclick = showWhen;
+    $('who').querySelectorAll('.chip').forEach(b => b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); const v = b.dataset.v;
+      if (v === '__team') S.wholeTeam = on; else if (v === '__unknown') { S.unknownOn = on; $('unknownWrap').hidden = !on; if (on) $('unknown').focus(); } else { on ? S.players.add(v) : S.players.delete(v); } sync(); });
+    wireChips('beh', (v, on) => { on ? S.behaviours.add(v) : S.behaviours.delete(v); }, true);
+    wireChips('sev', v => { S.severity = v; });
+    wireChips('cap', v => { S.captain = v; });
+    if (myRoster.length) wireChips('wit', (v, on) => { on ? S.witnesses.add(v) : S.witnesses.delete(v); }, true);
+    wireChips('stars', v => { S.stars = v; });
+    wireChips('want', v => { S.wanted = v; });
+    $('story').addEventListener('input', sync); $('unknown').addEventListener('input', sync);
+    $('submit').onclick = submit;
+  }
+  function whoOk() { return S.wholeTeam || S.players.size > 0 || (S.unknownOn && $('unknown').value.trim().length > 0); }
+  function sync() {
+    const story = ($('story') && $('story').value.trim()) || '';
+    if ($('storyCount')) $('storyCount').textContent = story.length + ' / 80 characters minimum';
+    if ($('submit')) $('submit').disabled = !(whoOk() && S.behaviours.size && S.severity && S.wanted && story.length >= 80 && S.acked);
+  }
+  async function submit() {
+    const err = $('err'); err.textContent = ''; $('submit').disabled = true;
+    const r = await gas('fp_submit', { token: S.token, my_team_number: S.myTeam ? S.myTeam.team_number : null, week: S.week || 0, subject_team_number: S.subject.team_number,
+      whole_team: S.wholeTeam, players: [...S.players], unknown_player: S.unknownOn ? $('unknown').value.trim() : '', behaviours: [...S.behaviours], severity: S.severity, captain_state: S.captain, scoresheet: S.stars, wanted: S.wanted,
+      witnesses: [...S.witnesses], witnesses_text: $('witText').value.trim(), narrative: $('story').value.trim(), extra: $('extra').value.trim(), ack: S.acked, hp: $('hp').value, fill_ms: Date.now() - S.opened });
+    if (!r.ok) { if (/session/i.test(r.error || '')) return handleSessionErr(r.error); err.textContent = r.error || 'Something went wrong. Try again.'; sync(); return; }
+    app.innerHTML = '<div style="text-align:center;padding:16px 4px"><div style="font-size:2.4rem">🤝</div><h2 style="margin:6px 0">Got it' + (r.id ? ' — report #' + esc(r.id) : '') + '.</h2><p class="lead">The league office reads every report and keeps your name out of it. You\'ll hear back within a week. A receipt is in your email — reply to it with photos or screenshots if you have any.</p><button class="btn ghost" id="home">Done</button></div>';
+    $('home').onclick = showHome;
+  }
+
+  /* ── session ── */
+  function handleSessionErr(msg) { try { localStorage.removeItem(SKEY); } catch (e) {} S.token = null; S.me = null; showLogin(msg || 'Your session expired. Sign in again.'); }
+  $('logout').onclick = () => { gas('fp_logout', { token: S.token }); try { localStorage.removeItem(SKEY); } catch (e) {} S.token = null; S.firstName = ''; S.me = null; showLogin(); };
+  function boot() {
+    const urlToken = new URLSearchParams(location.search).get('token');
+    let stored = null; try { stored = localStorage.getItem(SKEY); } catch (e) {}
+    const tok = urlToken || stored;
+    if (urlToken) history.replaceState(null, '', location.pathname);
+    if (!tok) { showLogin(); return; }
+    app.innerHTML = '<div style="padding:20px;text-align:center"><span class="spin"></span><p class="sub" style="margin-top:12px">Signing you in…</p></div>';
+    gas('fp_verify', { token: tok }).then(r => {
+      if (!r.ok) { try { localStorage.removeItem(SKEY); } catch (e) {} showLogin(urlToken ? (r.error || 'That link did not work. Request a fresh one.') : ''); return; }
+      S.token = tok; S.firstName = r.first_name || ''; try { localStorage.setItem(SKEY, tok); } catch (e) {}
+      showHome();
+    });
+  }
+
+  /* ── Auto-updater (checkVersion → pollForDeploy; reference_deploy.md) ── */
+  function cmpVer(a, b) { const pa = String(a).split('.'), pb = String(b).split('.'); for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const x = parseInt(pa[i], 10) || 0, y = parseInt(pb[i], 10) || 0; if (x > y) return 1; if (x < y) return -1; } return 0; }
+  let _versionMismatch = false;
+  async function checkVersion() {
+    try { const r = await fetch(SB_URL + '/rest/v1/apps?app_name=eq.' + APP_NAME + '&select=version', { headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'apa_core' } }); const rows = await r.json(); const v = rows && rows[0] && rows[0].version;
+      if (v && cmpVer(v, window.APP_VERSION) > 0 && !_versionMismatch) { if (document.querySelector('#story') && $('story').value) return; _versionMismatch = true; $('updateOverlay').classList.add('show'); pollForDeploy(); } } catch (e) {}
+  }
+  function pollForDeploy() { const t = setInterval(async () => { try { const r = await fetch('version.js?_=' + Date.now(), { cache: 'no-store' }); const m = (await r.text()).match(/APP_VERSION\s*=\s*'([^']+)'/); if (m && cmpVer(m[1], window.APP_VERSION) > 0) { clearInterval(t); location.reload(); } } catch (e) {} }, 15000); }
+  setInterval(checkVersion, 30000);
+  boot();
+</script>
+</body>
+</html>
