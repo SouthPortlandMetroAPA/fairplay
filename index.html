@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.5)
+  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.6)
   ─────────────────────────────────────────────────────────────────────────────
   Brief: tools/claude/briefs/2026-09-18-fairplay.md  (T1)
   WHO   a signed-in member (magic link → durable device session, SkillCheck/NickPick/CrewCall model).
@@ -26,6 +26,7 @@
 <meta name="robots" content="noindex">
 <title>FairPlay — South Portland Metro APA</title>
 <meta name="theme-color" content="#ea002a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A4%9D%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://southportlandmetroapa.github.io/shared/spm-base.css">
 <script src="version.js"></script>
 <script src="https://southportlandmetroapa.github.io/shared/spm-auth.js"></script>
@@ -74,15 +75,18 @@
 </head>
 <body>
   <div id="updateOverlay"><div class="spin"></div><div><b>Updating…</b><br>Grabbing the latest version.</div></div>
-  <div class="spm-page">
+  <div class="spm-page spm-wide">
     <header class="spm-header">
       <h1>FairPlay 🤝</h1>
       <p class="spm-subtitle">South Portland Metro APA · report a sportsmanship issue</p>
     </header>
-    <main class="spm-card">
-      <div class="ctl" id="ctl" hidden><span id="whoami" class="sub" style="margin:0"></span><button type="button" id="logout">Log out</button></div>
-      <div id="app"></div>
-    </main>
+    <div class="spm-shell">
+      <main class="spm-card">
+        <div class="ctl" id="ctl" hidden><span id="whoami" class="sub" style="margin:0"></span><button type="button" id="logout">Log out</button></div>
+        <div id="app"></div>
+      </main>
+      <aside class="spm-rail" id="rail" aria-live="polite"></aside>
+    </div>
   </div>
 
 <script>
@@ -125,7 +129,7 @@
   }
   function showHome() {
     $('ctl').hidden = false; $('whoami').textContent = S.firstName ? 'Signed in as ' + S.firstName : 'Signed in';
-    S.myTeam = null; S.week = 0; S.match = null; S.subject = null; S.wholeTeam = false; S.players = new Set(); S.unknownOn = false; S.behaviours = new Set(); S.severity = null; S.captain = null; S.witnesses = new Set(); S.stars = null; S.wanted = null;
+    S.myTeam = null; S.week = 0; S.match = null; S.subject = null; S.wholeTeam = false; S.players = new Set(); S.unknownOn = false; S.behaviours = new Set(); S.severity = null; S.captain = null; S.witnesses = new Set(); S.stars = null; S.wanted = null; S.acked = false; renderRail();
     app.innerHTML = '<p class="lead">Report a sportsmanship issue about a team, a player, or a few players on a team. It goes straight to the league office and stays private.</p>'
       + '<button class="btn" id="start">Report an issue</button>'
       + '<div id="mine" class="card-list" style="margin-top:22px"></div>';
@@ -184,7 +188,7 @@
   }
   function loadSubject(teamNumber) {
     app.innerHTML = '<div style="padding:20px;text-align:center"><span class="spin"></span></div>';
-    gas('fp_roster', { token: S.token, team_number: teamNumber }).then(r => { if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); showWhen(); const e = $('err'); if (e) e.textContent = r.error || 'Could not load that team.'; return; } S.subject = r.team; showForm(); });
+    gas('fp_roster', { token: S.token, team_number: teamNumber }).then(r => { if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); showWhen(); const e = $('err'); if (e) e.textContent = r.error || 'Could not load that team.'; return; } S.subject = r.team; showForm(); renderRail(); });
   }
   function chipRow(id, items, multi, cls) { return '<div class="chips" id="' + id + '">' + items.map(([v, l]) => '<button type="button" class="chip' + (cls && cls(v) ? ' warn' : '') + '" data-v="' + esc(v) + '" aria-pressed="false">' + esc(l) + '</button>').join('') + '</div>'; }
   function wireChips(id, onPick, multi) { $(id).querySelectorAll('.chip').forEach(b => b.onclick = () => { if (multi) { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); } else { $(id).querySelectorAll('.chip').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false')); } onPick(b.dataset.v, b.getAttribute('aria-pressed') === 'true'); sync(); }); }
@@ -217,8 +221,26 @@
     $('story').addEventListener('input', sync); $('unknown').addEventListener('input', sync);
     $('submit').onclick = submit;
   }
+  /* Desktop rail — a live mirror of the report (spm-base .spm-rail; display:none below 1200px). */
+  function renderRail() {
+    const rail = $('rail'); if (!rail) return;
+    if (!S.token || !S.acked) { rail.innerHTML = ''; return; }
+    const row = (k, v) => '<dt>' + k + '</dt><dd' + (v ? '>' + v : ' class="spm-rail-empty">not yet') + '</dd>';
+    const t = S.subject, m = S.match;
+    const who = t ? [S.wholeTeam ? 'the whole team' : '', ...[...S.players].map(n => { const p = (t.roster || []).find(x => x.member_number === n); return p ? esc(p.name) : ''; }).filter(Boolean), (S.unknownOn && $('unknown') && $('unknown').value.trim()) ? 'someone unnamed' : ''].filter(Boolean).join(', ') : '';
+    const lab = code => (BEHAVIOURS.find(b => b[0] === code) || [])[1] || code;
+    rail.innerHTML = '<div class="spm-rail-card"><h3>Your report so far</h3><dl>'
+      + row('Team', t ? esc(t.label || t.team_name) + (t.night ? ' · ' + esc(t.night) : '') : '')
+      + row('When', m ? 'Week ' + esc(S.week) + ' · ' + esc(fmtDate(m.date)) + (m.venue ? ' · ' + esc(m.venue) : '') : (t ? 'not during a match' : ''))
+      + row('Who', who)
+      + row('What', [...S.behaviours].map(lab).map(esc).join(', '))
+      + row('How bad', S.severity ? esc((SEVERITY.find(s => s[0] === S.severity) || [])[1]) : '')
+      + row('Wants', S.wanted ? esc((WANTED.find(w => w[0] === S.wanted) || [])[1]) : '')
+      + '</dl><p class="spm-rail-note"><b>Name who.</b> A team alone is hard to act on. <b>We read every one</b> — the other team never sees your name; you\'ll hear back within a week.</p></div>';
+  }
   function whoOk() { return S.wholeTeam || S.players.size > 0 || (S.unknownOn && $('unknown').value.trim().length > 0); }
   function sync() {
+    renderRail();
     const story = ($('story') && $('story').value.trim()) || '';
     if ($('storyCount')) $('storyCount').textContent = story.length + ' / 80 characters minimum';
     if ($('submit')) $('submit').disabled = !(whoOk() && S.behaviours.size && S.severity && S.wanted && story.length >= 80 && S.acked);
