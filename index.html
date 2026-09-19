@@ -111,6 +111,7 @@
 
   /* ── screens ── */
   function showLogin(msg) {
+    renderRail();                     /* the signed-out screen keeps no trace of the last person's work */
     $('ctl').hidden = true;
     app.innerHTML = '<p class="lead">Something happen on league night that should not have? Tell the league office here. Sign in with the email or APA number on your record; we send a link, no password.</p>'
       + (msg ? '<div class="err" style="margin-bottom:8px">' + esc(msg) + '</div>' : '')
