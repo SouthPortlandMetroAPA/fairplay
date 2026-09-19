@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.4)
+  FairPlay — South Portland Metro APA · report a sportsmanship issue (v0.5)
   ─────────────────────────────────────────────────────────────────────────────
   Brief: tools/claude/briefs/2026-09-18-fairplay.md  (T1)
   WHO   a signed-in member (magic link → durable device session, SkillCheck/NickPick/CrewCall model).
@@ -156,10 +156,11 @@
     const go = () => {
       const teams = S.me.teams || [];
       /* One card per NIGHT: an 8-Ball + 9-Ball pair (same team name, same opponent, same date) is one match night. */
-      const matches = [], seen = {}; teams.forEach(t => (t.weeks || []).forEach(w => { const k = String(w.date) + '|' + String(w.opponent_name).toLowerCase() + '|' + String(t.team_name).toLowerCase(); if (seen[k]) { seen[k].both = true; return; } seen[k] = { t, w, both: false }; matches.push(seen[k]); }));
+      /* the server already returns one row per NIGHT per team cluster (w.both = an 8 & 9-Ball pair); the key dedupe is only a safety net */
+      const matches = [], seen = {}; teams.forEach(t => (t.weeks || []).forEach(w => { const k = String(w.date) + '|' + String(w.opponent_cluster_id || w.opponent_name).toLowerCase() + '|' + String(t.cluster_id || t.team_name).toLowerCase(); if (seen[k]) { seen[k].both = true; return; } seen[k] = { t, w, both: !!w.both }; matches.push(seen[k]); }));
       matches.sort((a, b) => String(b.w.date).localeCompare(String(a.w.date)) || (b.w.week - a.w.week));
       app.innerHTML = '<label class="lbl" style="margin-top:4px">Which match was it?</label><p class="sub">Your played nights, newest first. Tap the one it happened at.</p><div class="err" id="err"></div>'
-        + (matches.length ? matches.map((m, i) => '<button type="button" class="match" data-i="' + i + '"><b>vs ' + esc(m.w.opponent_name) + '</b><span>Week ' + esc(m.w.week) + ' · ' + esc(fmtDate(m.w.date)) + ' · ' + (m.w.home ? 'home' : 'away') + (m.w.venue ? ' at ' + esc(m.w.venue) : '') + (teams.length > 1 ? ' · ' + esc(m.t.team_name) : '') + (m.both ? ' · 8 &amp; 9-Ball night' : '') + '</span></button>').join('') : '<p class="sub">We don\'t see any played matches for you yet this session.</p>')
+        + (matches.length ? matches.map((m, i) => '<button type="button" class="match" data-i="' + i + '"><b>vs ' + esc(m.w.opponent_name) + '</b><span>Week ' + esc(m.w.week) + ' · ' + esc(fmtDate(m.w.date)) + ' · ' + (m.w.home ? 'home' : 'away') + (m.w.venue ? ' at ' + esc(m.w.venue) : '') + (teams.length > 1 ? ' · ' + esc(m.t.label || m.t.team_name) : '') + (m.both ? ' · 8 &amp; 9-Ball night' : '') + '</span></button>').join('') : '<p class="sub">We don\'t see any played matches for you yet this session.</p>')
         + '<button class="btn ghost" id="notMatch">It wasn\'t during one of my matches</button>'
         + '<button class="btn ghost" id="back" style="margin-top:8px">Back</button>';
       app.querySelectorAll('.match').forEach(b => b.onclick = () => { const m = matches[+b.dataset.i]; S.myTeam = m.t; S.week = m.w.week; S.match = m.w; loadSubject(m.w.opponent_number); });
@@ -171,9 +172,11 @@
   }
   function showTeamPick() {
     S.myTeam = (S.me.teams || []).length === 1 ? S.me.teams[0] : null; S.week = 0; S.match = null;
-    const divs = {}; S.allTeams.forEach(t => { const k = t.division_name || 'Other'; (divs[k] = divs[k] || []).push(t); });
-    app.innerHTML = '<label class="lbl" for="teamSel" style="margin-top:4px">Which team is this about?</label><p class="sub">Every South Portland Metro team this session, by division.</p>'
-      + '<select id="teamSel"><option value="">Pick a team…</option>' + Object.keys(divs).sort().map(d => '<optgroup label="' + esc(d) + '">' + divs[d].map(t => '<option value="' + esc(t.team_number) + '">' + esc(t.team_name) + ' (' + esc(t.team_number) + ')</option>').join('') + '</optgroup>').join('') + '</select>'
+    /* clusters (one entry per TEAM — an 8 & 9-Ball pair is one line), grouped by night */
+    const divs = {}; S.allTeams.forEach(t => { const k = t.night || 'Other'; (divs[k] = divs[k] || []).push(t); });
+    const ORDER = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Other'];
+    app.innerHTML = '<label class="lbl" for="teamSel" style="margin-top:4px">Which team is this about?</label><p class="sub">Every South Portland Metro team this session, by night.</p>'
+      + '<select id="teamSel"><option value="">Pick a team…</option>' + Object.keys(divs).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)).map(d => '<optgroup label="' + esc(d) + '">' + divs[d].map(t => '<option value="' + esc(t.cluster_id || t.team_number) + '">' + esc(t.label || t.team_name) + ((t.team_numbers || []).length > 1 ? ' · 8 & 9-Ball' : '') + '</option>').join('') + '</optgroup>').join('') + '</select>'
       + '<div class="err" id="err"></div><button class="btn" id="next" disabled>Next</button><button class="btn ghost" id="back">Back</button>';
     $('teamSel').onchange = () => { $('next').disabled = !$('teamSel').value; };
     $('next').onclick = () => loadSubject($('teamSel').value);
@@ -188,7 +191,7 @@
   function showForm() {
     const t = S.subject, m = S.match;
     const myRoster = []; (S.me.teams || []).forEach(tm => { if (S.myTeam && tm.team_number !== S.myTeam.team_number) return; (tm.roster || []).forEach(p => { if (!myRoster.some(x => x.member_number === p.member_number)) myRoster.push(p); }); });
-    app.innerHTML = '<div class="rec"><div class="who"><b>' + esc(t.team_name) + ' (' + esc(t.team_number) + ')</b><span class="sub" style="margin:0">' + esc(t.division_name || '') + (m ? ' · week ' + esc(S.week) + ' · ' + esc(fmtDate(m.date)) + (m.venue ? ' · ' + esc(m.venue) : '') : ' · not during one of your matches') + '</span></div></div>'
+    app.innerHTML = '<div class="rec"><div class="who"><b>' + esc(t.label || t.team_name) + ' (' + esc((t.team_numbers || [t.team_number]).join('/')) + ')</b><span class="sub" style="margin:0">' + esc(t.night ? t.night + ' · ' : '') + esc((t.division_names || [t.division_name]).join(' + ')) + (m ? ' · week ' + esc(S.week) + ' · ' + esc(fmtDate(m.date)) + (m.venue ? ' · ' + esc(m.venue) : '') : ' · not during one of your matches') + '</span></div></div>'
       + '<label class="lbl">Who was involved?</label><p class="sub">Tap the players. Names come from their roster.</p>'
       + '<div class="chips" id="who"><button type="button" class="chip" data-v="__team" aria-pressed="false">The whole team</button>' + (t.roster || []).map(p => '<button type="button" class="chip" data-v="' + esc(p.member_number) + '" aria-pressed="false">' + esc(p.name) + '</button>').join('') + '<button type="button" class="chip" data-v="__unknown" aria-pressed="false">Someone I can\'t name</button></div>'
       + '<div id="unknownWrap" hidden style="margin-top:8px"><input type="text" id="unknown" maxlength="300" placeholder="Describe them — e.g. tall guy in the red hat, shot third"></div>'
