@@ -106,7 +106,9 @@
   const app = $('app');
   /* Closed items — labels mirror the GAS FP_* maps; codes are what the server stores. */
   const BEHAVIOURS = [['language', 'Rude or hostile language'], ['threats', 'Threats or intimidation'], ['physical', 'Physical contact'], ['rules', 'Arguing calls or refusing rules'], ['distracting', 'Distracting while shooting (talking, music, line of sight)'], ['handshake', 'Refused handshake / stormed off'], ['impaired', 'Drunk or impaired'], ['harassment', 'Harassment (in person or messages)'], ['venue', 'Seats, tables or venue dispute'], ['other', 'Something else']];
-  const SEVERITY = [['uncomfortable', 'Made people uncomfortable'], ['disrupted', 'Disrupted the match'], ['unsafe', 'Someone felt unsafe or threatened']];
+  const SEVERITY = [['annoying', 'Annoying'], ['wrecked', 'It wrecked the match'], ['physical', 'Someone got physical'], ['unsafe', 'Someone felt unsafe']];
+  /* LEGACY_SEVERITY is only for rendering reports filed before 2026-09-19 */
+  const LEGACY_SEVERITY = [['uncomfortable', 'Made people uncomfortable'], ['disrupted', 'Disrupted the match']];
   const CAPTAIN = [['helpful', 'There and helped calm it'], ['unhelpful', 'There and did not help'], ['absent', 'Not there'], ['unsure', 'Not sure']];
   const STARS = [['low', 'Yes — 1 or 2 stars'], ['ok', 'Yes — 3 or more'], ['no', 'No'], ['unsure', 'Not sure']];
   const WANTED = [['note', 'Just note it for their file'], ['talk', 'Have a word with them'], ['action', 'Take action']];
@@ -151,9 +153,10 @@
     S.acked = false; S.opened = Date.now();
     const back = document.createElement('div'); back.className = 'note-back'; back.id = 'noteBack'; back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-labelledby', 'noteTitle');
     back.innerHTML = '<div class="note"><h2 id="noteTitle">Before you start</h2>'
-      + '<p><b>Bad nights happen.</b> Report what you saw and heard, not what you assume.</p>'
-      + '<p><b>Name who.</b> A team alone is hard to act on; pick the players if you can.</p>'
-      + '<p><b>We read every one.</b> The other team never sees your name. You\'ll hear back within a week.</p>'
+      + '<p><b>Bad nights happen.</b> Sorry you had one. Tell us what you saw.</p>'
+      + '<p><b>Name who if you can.</b> A team on its own is hard to act on.</p>'
+      + '<p><b>Your name stays in the office.</b> The other team does not hear it from us. Every report gets read and you will hear back.</p>'
+      + '<p><b>If anyone got physical, call tonight.</b> That one cannot wait for email.</p>'
       + '<button class="btn" id="gotit">Got it</button></div>';
     document.body.appendChild(back);
     $('gotit').onclick = () => { S.acked = true; back.remove(); showWhen(); };
@@ -203,25 +206,14 @@
       + '<label class="lbl">Who was involved?</label><p class="sub">Tap the players. Names come from their roster.</p>'
       + '<div class="chips" id="who"><button type="button" class="chip" data-v="__team" aria-pressed="false">The whole team</button>' + (t.roster || []).map(p => '<button type="button" class="chip" data-v="' + esc(p.member_number) + '" aria-pressed="false">' + esc(p.name) + '</button>').join('') + '<button type="button" class="chip" data-v="__unknown" aria-pressed="false">Someone I can\'t name</button></div>'
       + '<div id="unknownWrap" hidden style="margin-top:8px"><input type="text" id="unknown" maxlength="300" placeholder="Describe them — e.g. tall guy in the red hat, shot third"></div>'
-      + '<label class="lbl">What happened? <small>tap all that apply</small></label>' + chipRow('beh', BEHAVIOURS, true, v => v === 'physical' || v === 'threats' || v === 'harassment')
-      + '<label class="lbl">How bad was it?</label>' + chipRow('sev', SEVERITY, false, v => v === 'unsafe')
-      + '<label class="lbl">Their captain was… <small>optional</small></label>' + chipRow('cap', CAPTAIN, false)
-      + '<label class="lbl">Who else saw it? <small>optional</small></label>' + (myRoster.length ? '<p class="sub">Your teammates, from the roster.</p>' + chipRow('wit', myRoster.map(p => [p.member_number, p.name]), true) : '') + '<input type="text" id="witText" maxlength="300" placeholder="Anyone else? (bartender, other team…)" style="margin-top:8px">'
-      + '<label class="lbl">Did you mark it on the scoresheet? <small>optional</small></label><p class="sub">The sportsmanship stars next to their name.</p>' + chipRow('stars', STARS, false)
-      + '<label class="lbl">What would make this right?</label>' + chipRow('want', WANTED, false)
-      + '<label class="lbl" for="story">Tell us what happened</label><p class="sub">What was said or done, by whom, in what order. Specifics are what let us act.</p><textarea id="story" maxlength="6000" placeholder="A few sentences."></textarea>'
-      + '<label class="lbl" for="extra">Anything else? <small>optional</small></label><p class="sub">Photos or screenshots: reply to your receipt email with them attached.</p><textarea id="extra" maxlength="1000" style="min-height:70px" placeholder="Has this happened before, other context…"></textarea>'
-      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true"><div class="err" id="err"></div><div class="need" id="need" aria-live="polite"></div><button class="btn" id="submit" disabled>Send my report</button><p class="fine">Private. The other team is never told who reported.</p>'
+      + '<label class="lbl" for="story">What happened?</label><textarea id="story" maxlength="6000" placeholder="What was said or done, by who, and roughly when in the night."></textarea>'
+      + '<label class="lbl">How bad was it?</label>' + chipRow('sev', SEVERITY, false, v => v === 'unsafe' || v === 'physical')
+      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true"><div class="err" id="err"></div><div class="need" id="need" aria-live="polite"></div><button class="btn" id="submit" disabled>Send my report</button><p class="fine">Your name stays in the office. The other team does not hear it from us.</p>'
       + '<button class="btn ghost" id="back">Back</button>';
     $('back').onclick = showWhen;
     $('who').querySelectorAll('.chip').forEach(b => b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); const v = b.dataset.v;
       if (v === '__team') S.wholeTeam = on; else if (v === '__unknown') { S.unknownOn = on; $('unknownWrap').hidden = !on; if (on) $('unknown').focus(); } else { on ? S.players.add(v) : S.players.delete(v); } sync(); });
-    wireChips('beh', (v, on) => { on ? S.behaviours.add(v) : S.behaviours.delete(v); }, true);
     wireChips('sev', v => { S.severity = v; });
-    wireChips('cap', v => { S.captain = v; });
-    if (myRoster.length) wireChips('wit', (v, on) => { on ? S.witnesses.add(v) : S.witnesses.delete(v); }, true);
-    wireChips('stars', v => { S.stars = v; });
-    wireChips('want', v => { S.wanted = v; });
     $('story').addEventListener('input', sync); $('unknown').addEventListener('input', sync);
     $('submit').onclick = submit;
   }
@@ -234,13 +226,11 @@
     const who = t ? [S.wholeTeam ? 'the whole team' : '', ...[...S.players].map(n => { const p = (t.roster || []).find(x => x.member_number === n); return p ? esc(p.name) : ''; }).filter(Boolean), (S.unknownOn && $('unknown') && $('unknown').value.trim()) ? 'someone unnamed' : ''].filter(Boolean).join(', ') : '';
     const lab = code => (BEHAVIOURS.find(b => b[0] === code) || [])[1] || code;
     rail.innerHTML = '<div class="spm-rail-card"><h3>Your report so far</h3><dl>'
-      + row('Team', t ? esc(t.label || t.team_name) + (t.night ? ' · ' + esc(t.night) : '') : '')
-      + row('When', m ? 'Week ' + esc(S.week) + ' · ' + esc(fmtDate(m.date)) + (m.venue ? ' · ' + esc(m.venue) : '') : (t ? 'not during a match' : ''))
+      + row('Team', t ? esc(t.label || t.team_name) + (t.night ? ' \u00b7 ' + esc(t.night) : '') : '')
+      + row('When', m ? 'Week ' + esc(S.week) + ' \u00b7 ' + esc(fmtDate(m.date)) + (m.venue ? ' \u00b7 ' + esc(m.venue) : '') : (t ? 'not during a match' : ''))
       + row('Who', who)
-      + row('What', [...S.behaviours].map(lab).map(esc).join(', '))
-      + row('How bad', S.severity ? esc((SEVERITY.find(s => s[0] === S.severity) || [])[1]) : '')
-      + row('Wants', S.wanted ? esc((WANTED.find(w => w[0] === S.wanted) || [])[1]) : '')
-      + '</dl><p class="spm-rail-note"><b>Name who.</b> A team alone is hard to act on. <b>We read every one</b> — the other team never sees your name; you\'ll hear back within a week.</p></div>';
+      + row('How bad', S.severity ? esc((SEVERITY.find(x => x[0] === S.severity) || [])[1]) : '')
+      + '</dl><p class="spm-rail-note"><b>Name who if you can.</b> A team on its own is hard to act on. Your name stays in the office.</p></div>';
   }
   function whoOk() { return S.wholeTeam || S.players.size > 0 || (S.unknownOn && $('unknown').value.trim().length > 0); }
   function sync() {
@@ -250,18 +240,16 @@
        The narrative is required but NEVER measured (operator: "dont put a min char count", 2026-09-18). */
     const missing = [];
     if (!whoOk()) missing.push('who was involved');
-    if (!S.behaviours.size) missing.push('what happened');
+    if (!story.length) missing.push('what happened');
     if (!S.severity) missing.push('how bad it was');
-    if (!S.wanted) missing.push('what would make this right');
-    if (!story.length) missing.push('tell us what happened');
     if (!S.acked) missing.push('tap Got it on the note');
     if ($('need')) $('need').innerHTML = missing.length ? '<b>Still needed:</b> ' + missing.join(' &middot; ') : '';
-    if ($('submit')) $('submit').disabled = !(whoOk() && S.behaviours.size && S.severity && S.wanted && story.length > 0 && S.acked);
+    if ($('submit')) $('submit').disabled = !(whoOk() && story.length > 0 && S.severity && S.acked);
   }
   async function submit() {
     const err = $('err'); err.textContent = ''; $('submit').disabled = true;
     const r = await gas('fp_submit', { token: S.token, my_team_number: S.myTeam ? S.myTeam.team_number : null, week: S.week || 0, subject_team_number: S.subject.team_number,
-      whole_team: S.wholeTeam, players: [...S.players], unknown_player: S.unknownOn ? $('unknown').value.trim() : '', behaviours: [...S.behaviours], severity: S.severity, captain_state: S.captain, scoresheet: S.stars, wanted: S.wanted,
+      whole_team: S.wholeTeam, players: [...S.players], unknown_player: S.unknownOn ? $('unknown').value.trim() : '', severity: S.severity,
       witnesses: [...S.witnesses], witnesses_text: $('witText').value.trim(), narrative: $('story').value.trim(), extra: $('extra').value.trim(), ack: S.acked, hp: $('hp').value, fill_ms: Date.now() - S.opened });
     if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); err.textContent = r.error || 'Something went wrong. Try again.'; sync(); return; }
     app.innerHTML = '<div style="text-align:center;padding:16px 4px"><div style="font-size:2.4rem">🤝</div><h2 style="margin:6px 0">Got it' + (r.id ? ' — report #' + esc(r.id) : '') + '.</h2><p class="lead">The league office reads every report and keeps your name out of it. You\'ll hear back within a week. A receipt is in your email — reply to it with photos or screenshots if you have any.</p><button class="btn ghost" id="home">Done</button></div>';
