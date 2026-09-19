@@ -69,6 +69,9 @@
   .note .btn{ margin-top:6px; }
   .spin{ display:inline-block; width:26px; height:26px; border:3px solid #e5e7eb; border-top-color:var(--spm-primary); border-radius:50%; animation:spin 1s linear infinite; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
+  .need{ margin:10px 0 0; font-size:.88rem; line-height:1.45; color:#7a5a00; background:#fff8e1; border:1px solid #f0e0a8; border-radius:10px; padding:8px 10px; }
+  .need b{ font-weight:800; }
+  .need:empty{ display:none; border:0; padding:0; margin:0; }
   #updateOverlay{ position:fixed; inset:0; background:rgba(255,255,255,.96); z-index:9999; display:none; align-items:center; justify-content:center; flex-direction:column; gap:14px; text-align:center; padding:24px; }
   #updateOverlay.show{ display:flex; }
 </style>
@@ -206,9 +209,9 @@
       + '<label class="lbl">Who else saw it? <small>optional</small></label>' + (myRoster.length ? '<p class="sub">Your teammates, from the roster.</p>' + chipRow('wit', myRoster.map(p => [p.member_number, p.name]), true) : '') + '<input type="text" id="witText" maxlength="300" placeholder="Anyone else? (bartender, other team…)" style="margin-top:8px">'
       + '<label class="lbl">Did you mark it on the scoresheet? <small>optional</small></label><p class="sub">The sportsmanship stars next to their name.</p>' + chipRow('stars', STARS, false)
       + '<label class="lbl">What would make this right?</label>' + chipRow('want', WANTED, false)
-      + '<label class="lbl" for="story">Tell us what happened</label><p class="sub">What was said or done, by whom, in what order. Specifics are what let us act.</p><textarea id="story" maxlength="6000" placeholder="A few sentences."></textarea><div class="sub" id="storyCount">0 / 80 characters minimum</div>'
+      + '<label class="lbl" for="story">Tell us what happened</label><p class="sub">What was said or done, by whom, in what order. Specifics are what let us act.</p><textarea id="story" maxlength="6000" placeholder="A few sentences."></textarea>'
       + '<label class="lbl" for="extra">Anything else? <small>optional</small></label><p class="sub">Photos or screenshots: reply to your receipt email with them attached.</p><textarea id="extra" maxlength="1000" style="min-height:70px" placeholder="Has this happened before, other context…"></textarea>'
-      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true"><div class="err" id="err"></div><button class="btn" id="submit" disabled>Send my report</button><p class="fine">Private. The other team is never told who reported.</p>'
+      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true"><div class="err" id="err"></div><div class="need" id="need" aria-live="polite"></div><button class="btn" id="submit" disabled>Send my report</button><p class="fine">Private. The other team is never told who reported.</p>'
       + '<button class="btn ghost" id="back">Back</button>';
     $('back').onclick = showWhen;
     $('who').querySelectorAll('.chip').forEach(b => b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); const v = b.dataset.v;
@@ -243,8 +246,17 @@
   function sync() {
     renderRail();
     const story = ($('story') && $('story').value.trim()) || '';
-    if ($('storyCount')) $('storyCount').textContent = story.length + ' / 80 characters minimum';
-    if ($('submit')) $('submit').disabled = !(whoOk() && S.behaviours.size && S.severity && S.wanted && story.length >= 80 && S.acked);
+    /* Name every unmet condition — six of them used to fail silently and the operator hit a dead button.
+       The narrative is required but NEVER measured (operator: "dont put a min char count", 2026-09-18). */
+    const missing = [];
+    if (!whoOk()) missing.push('who was involved');
+    if (!S.behaviours.size) missing.push('what happened');
+    if (!S.severity) missing.push('how bad it was');
+    if (!S.wanted) missing.push('what would make this right');
+    if (!story.length) missing.push('tell us what happened');
+    if (!S.acked) missing.push('tap Got it on the note');
+    if ($('need')) $('need').innerHTML = missing.length ? '<b>Still needed:</b> ' + missing.join(' &middot; ') : '';
+    if ($('submit')) $('submit').disabled = !(whoOk() && S.behaviours.size && S.severity && S.wanted && story.length > 0 && S.acked);
   }
   async function submit() {
     const err = $('err'); err.textContent = ''; $('submit').disabled = true;
