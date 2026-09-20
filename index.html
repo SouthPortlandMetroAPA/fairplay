@@ -250,9 +250,9 @@
     const err = $('err'); err.textContent = ''; $('submit').disabled = true;
     const r = await gas('fp_submit', { token: S.token, my_team_number: S.myTeam ? S.myTeam.team_number : null, week: S.week || 0, subject_team_number: S.subject.team_number,
       whole_team: S.wholeTeam, players: [...S.players], unknown_player: S.unknownOn ? $('unknown').value.trim() : '', severity: S.severity,
-      witnesses: [...S.witnesses], witnesses_text: $('witText').value.trim(), narrative: $('story').value.trim(), extra: $('extra').value.trim(), ack: S.acked, hp: $('hp').value, fill_ms: Date.now() - S.opened });
+      narrative: $('story').value.trim(), ack: S.acked, hp: $('hp').value, fill_ms: Date.now() - S.opened });
     if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); err.textContent = r.error || 'Something went wrong. Try again.'; sync(); return; }
-    app.innerHTML = '<div style="text-align:center;padding:16px 4px"><div style="font-size:2.4rem">🤝</div><h2 style="margin:6px 0">Got it' + (r.id ? ' — report #' + esc(r.id) : '') + '.</h2><p class="lead">The league office reads every report and keeps your name out of it. You\'ll hear back within a week. A receipt is in your email — reply to it with photos or screenshots if you have any.</p><button class="btn ghost" id="home">Done</button></div>';
+    app.innerHTML = '<div style="text-align:center;padding:16px 4px"><div style="font-size:2.4rem">🤝</div><h2 style="margin:6px 0">Got it' + (r.id ? '. Report #' + esc(r.id) : '.') + '</h2><p class="lead">We read every one and your name stays in the office. You will hear back. There is a receipt in your email. Reply to it with photos or anything you left out.</p><button class="btn ghost" id="home">Done</button></div>';
     $('home').onclick = showHome;
   }
 
