@@ -104,7 +104,7 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   /* GAS: text/plain body, never application/json (CORS preflight GAS cannot answer) */
   const gas = (action, extra) => fetch(GAS_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, extra || {})) }).then(r => r.json()).catch(() => ({ ok: false, error: 'Network hiccup. Check your connection and try again.' }));
-  const S = { token: null, firstName: '', me: null, allTeams: [], myTeam: null, week: 0, match: null, subject: null, acked: false, opened: Date.now(),
+  const S = { token: null, firstName: '', mn: null, me: null, allTeams: [], myTeam: null, week: 0, match: null, subject: null, acked: false, opened: Date.now(),
               wholeTeam: false, players: new Set(), unknownOn: false, behaviours: new Set(), severity: null, captain: null, witnesses: new Set(), stars: null, wanted: null };
   const app = $('app');
   /* Closed items — labels mirror the GAS FP_* maps; codes are what the server stores. */
@@ -273,7 +273,7 @@
     app.innerHTML = '<div style="padding:20px;text-align:center"><span class="spin"></span><p class="sub" style="margin-top:12px">Signing you in…</p></div>';
     gas('fp_verify', { token: tok }).then(r => {
       if (!r.ok) { if (!urlToken || spmAuth.isAuthErr(r.error)) spmAuth.clear(); showLogin(urlToken ? (r.error || 'That link did not work. Request a fresh one.') : ''); return; }
-      S.token = tok; S.firstName = r.first_name || ''; spmAuth.set(tok);
+      S.token = tok; S.firstName = r.first_name || ''; S.mn = r.member_number || null; spmAuth.set(tok);
       showHome();
     });
   }
@@ -295,7 +295,9 @@
    timestamp. Skips while a modal is open or the tab is hidden; the first sample only seeds. */
   let _dataPulse = null;
   async function fetchDataPulse() {
-    const key = S.token && S.me ? S.me.member_number : null;
+    /* S.me is null until the user clicks into the flow, so keying on it made the poll a silent no-op
+       on the home screen. fp_verify now hands us the number at boot. */
+    const key = S.mn || (S.me ? S.me.member_number : null);
     if (!key) return null;
     try {
       const r = await fetch(SB_URL + '/rest/v1/rpc/app_pulse', {
