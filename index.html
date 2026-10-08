@@ -104,7 +104,7 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   /* GAS: text/plain body, never application/json (CORS preflight GAS cannot answer) */
   const gas = (action, extra) => fetch(GAS_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action }, extra || {})) }).then(r => r.json()).catch(() => ({ ok: false, error: 'Network hiccup. Check your connection and try again.' }));
-  const S = { token: null, firstName: '', mn: null, me: null, allTeams: [], myTeam: null, week: 0, match: null, subject: null, acked: false, opened: Date.now(),
+  const S = { kind: 'report', qualities: new Set(), token: null, firstName: '', mn: null, me: null, allTeams: [], myTeam: null, week: 0, match: null, subject: null, acked: false, opened: Date.now(),
               wholeTeam: false, players: new Set(), unknownOn: false, behaviours: new Set(), severity: null, captain: null, witnesses: new Set(), stars: null, wanted: null };
   const app = $('app');
   /* Closed items — labels mirror the GAS FP_* maps; codes are what the server stores. */
@@ -115,6 +115,9 @@
   const CAPTAIN = [['helpful', 'There and helped calm it'], ['unhelpful', 'There and did not help'], ['absent', 'Not there'], ['unsure', 'Not sure']];
   const STARS = [['low', 'Yes — 1 or 2 stars'], ['ok', 'Yes — 3 or more'], ['no', 'No'], ['unsure', 'Not sure']];
   const WANTED = [['note', 'Just note it for their file'], ['talk', 'Have a word with them'], ['action', 'Take action']];
+  /* Shout-outs (1.3). Mirrors GAS FP_QUALITIES. Deliberately short and concrete — "good sport" is
+     something you can tap after a match; "exemplified sportsmanship" is something nobody taps. */
+  const QUALITIES = [['good_sport', 'Good sport, win or lose'], ['own_fouls', 'Called their own fouls'], ['helped', 'Helped a newer player'], ['friendly', 'Kept it friendly all night'], ['fair_call', 'Fair on a close call'], ['welcoming', 'Made us feel welcome'], ['other', 'Something else']];
   const fmtDate = d => { if (!d) return ''; const p = String(d).split('-'); if (p.length !== 3) return d; const dt = new Date(+p[0], +p[1] - 1, +p[2]); return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' }); };
 
   /* ── screens ── */
@@ -138,11 +141,14 @@
   }
   function showHome() {
     $('ctl').hidden = false; $('whoami').textContent = S.firstName ? 'Signed in as ' + S.firstName : 'Signed in';
+    S.kind = 'report'; S.qualities = new Set();
     S.myTeam = null; S.week = 0; S.match = null; S.subject = null; S.wholeTeam = false; S.players = new Set(); S.unknownOn = false; S.behaviours = new Set(); S.severity = null; S.captain = null; S.witnesses = new Set(); S.stars = null; S.wanted = null; S.acked = false; renderRail();
-    app.innerHTML = '<p class="lead">Report a sportsmanship issue about a team, a player, or a few players on a team. It goes straight to the league office and stays private.</p>'
+    app.innerHTML = '<p class="lead">Tell the league office about a team or a player — something that went wrong, or something that went right. Either way it stays private.</p>'
       + '<button class="btn" id="start">Report an issue</button>'
+      + '<button class="btn ghost" id="startGood" style="margin-top:10px">Give a shout-out</button>'
       + '<div id="mine" class="card-list" style="margin-top:22px"></div>';
-    $('start').onclick = showNote;
+    $('start').onclick = () => { S.kind = 'report'; showNote(); };
+    $('startGood').onclick = () => { S.kind = 'kudos'; showNote(); };
     gas('fp_my', { token: S.token }).then(r => {
       if (!r.ok || !r.reports || !r.reports.length) return;
       const tag = q => q.status === 'resolved' ? '<span class="tag done">' + esc({ noted: 'noted on file', spoke: 'we spoke with them', action: 'action taken', no_action: 'no action' }[q.resolution] || 'resolved') + '</span>' : q.status === 'in_review' ? '<span class="tag review">looking into it</span>' : '<span class="tag">received</span>';
@@ -155,6 +161,18 @@
   function showNote() {
     S.acked = false; S.opened = Date.now();
     const back = document.createElement('div'); back.className = 'note-back'; back.id = 'noteBack'; back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-labelledby', 'noteTitle');
+    if (S.kind === 'kudos') {
+      /* Two lines, not four. The report note warns about physical incidents and promises a reply;
+         neither belongs in front of someone paying a compliment, and the reply promise would be false. */
+      back.innerHTML = '<div class="note"><h2 id="noteTitle">Before you start</h2>'
+        + '<p><b>Good nights happen too.</b> Tell us who made one.</p>'
+        + '<p><b>It goes on their record with the office.</b> We will not forward it to them, so say it to their face as well.</p>'
+        + '<button class="btn" id="gotit">Got it</button></div>';
+      document.body.appendChild(back);
+      $('gotit').onclick = () => { S.acked = true; back.remove(); showWhen(); };
+      $('gotit').focus();
+      return;
+    }
     back.innerHTML = '<div class="note"><h2 id="noteTitle">Before you start</h2>'
       + '<p><b>Bad nights happen.</b> Sorry you had one. Tell us what you saw.</p>'
       + '<p><b>Name who if you can.</b> A team on its own is hard to act on.</p>'
@@ -203,6 +221,7 @@
   function chipRow(id, items, multi, cls) { return '<div class="chips" id="' + id + '">' + items.map(([v, l]) => '<button type="button" class="chip' + (cls && cls(v) ? ' warn' : '') + '" data-v="' + esc(v) + '" aria-pressed="false">' + esc(l) + '</button>').join('') + '</div>'; }
   function wireChips(id, onPick, multi) { $(id).querySelectorAll('.chip').forEach(b => b.onclick = () => { if (multi) { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); } else { $(id).querySelectorAll('.chip').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false')); } onPick(b.dataset.v, b.getAttribute('aria-pressed') === 'true'); sync(); }); }
   function showForm() {
+    if (S.kind === 'kudos') return showKudosForm();
     const t = S.subject, m = S.match;
     const myRoster = []; (S.me.teams || []).forEach(tm => { if (S.myTeam && tm.team_number !== S.myTeam.team_number) return; (tm.roster || []).forEach(p => { if (!myRoster.some(x => x.member_number === p.member_number)) myRoster.push(p); }); });
     app.innerHTML = '<div class="rec"><div class="who"><b>' + esc(t.label || t.team_name) + ' (' + esc((t.team_numbers || [t.team_number]).join('/')) + ')</b><span class="sub" style="margin:0">' + esc(t.night ? t.night + ' · ' : '') + esc((t.division_names || [t.division_name]).join(' + ')) + (m ? ' · week ' + esc(S.week) + ' · ' + esc(fmtDate(m.date)) + (m.venue ? ' · ' + esc(m.venue) : '') : ' · not during one of your matches') + '</span></div></div>'
@@ -220,6 +239,35 @@
     $('story').addEventListener('input', sync); $('unknown').addEventListener('input', sync);
     $('submit').onclick = submit;
   }
+  /* Shout-out form — who + what was good. No severity field exists on this path, so no urgency
+     signal can be derived from it, by this client or by the server. */
+  function showKudosForm() {
+    const t = S.subject, m = S.match;
+    app.innerHTML = '<div class="rec"><div class="who"><b>' + esc(t.label || t.team_name) + ' (' + esc((t.team_numbers || [t.team_number]).join('/')) + ')</b><span class="sub" style="margin:0">' + esc(t.night ? t.night + ' \u00b7 ' : '') + esc((t.division_names || [t.division_name]).join(' + ')) + (m ? ' \u00b7 week ' + esc(S.week) + ' \u00b7 ' + esc(fmtDate(m.date)) + (m.venue ? ' \u00b7 ' + esc(m.venue) : '') : ' \u00b7 not during one of your matches') + '</span></div></div>'
+      + '<label class="lbl">Who deserves it?</label><p class="sub">Tap the players. Names come from their roster.</p>'
+      + '<div class="chips" id="who"><button type="button" class="chip" data-v="__team" aria-pressed="false">The whole team</button>' + (t.roster || []).map(p => '<button type="button" class="chip" data-v="' + esc(p.member_number) + '" aria-pressed="false">' + esc(p.name) + '</button>').join('') + '</div>'
+      + '<label class="lbl">What did they do well?</label>' + chipRow('qual', QUALITIES, true)
+      + '<label class="lbl" for="story">Anything to add?</label><p class="sub">Optional.</p><textarea id="story" maxlength="2000" placeholder="What they did, and when in the night."></textarea>'
+      + '<input class="hp" type="text" name="website" id="hp" tabindex="-1" autocomplete="off" aria-hidden="true"><div class="err" id="err"></div><div class="need" id="need" aria-live="polite"></div><button class="btn" id="submit" disabled>Send shout-out</button><p class="fine">This goes to the league office. We do not pass it on to them, so tell them too.</p>'
+      + '<button class="btn ghost" id="back">Back</button>';
+    $('back').onclick = showWhen;
+    $('who').querySelectorAll('.chip').forEach(b => b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); const v = b.dataset.v;
+      if (v === '__team') S.wholeTeam = on; else { on ? S.players.add(v) : S.players.delete(v); } sync(); });
+    wireChips('qual', (v, on) => { on ? S.qualities.add(v) : S.qualities.delete(v); }, true);
+    $('story').addEventListener('input', sync);
+    $('submit').onclick = submitKudos;
+  }
+  async function submitKudos() {
+    const err = $('err'); err.textContent = ''; $('submit').disabled = true;
+    const r = await gas('fp_kudos', { token: S.token, my_team_number: S.myTeam ? S.myTeam.team_number : null, week: S.week || 0,
+      subject_team_number: S.subject.team_number, whole_team: S.wholeTeam, players: [...S.players],
+      qualities: [...S.qualities], note: $('story').value.trim(), hp: $('hp').value, fill_ms: Date.now() - S.opened });
+    if (!r.ok) { if (isAuthErr(r.error)) return handleSessionErr(r.error); err.textContent = r.error || 'Something went wrong. Try again.'; sync(); return; }
+    /* No "you will hear back", no "check your email" — nothing is sent on this path. */
+    app.innerHTML = '<div style="text-align:center;padding:16px 4px"><div style="font-size:2.4rem">\ud83d\udc4f</div><h2 style="margin:6px 0">Passed along.</h2><p class="lead">It is on their record with the office. We will not forward it, so tell them yourself too — that is the part they will remember.</p><button class="btn ghost" id="home">Done</button></div>';
+    $('home').onclick = showHome;
+  }
+
   /* Desktop rail — a live mirror of the report (spm-base .spm-rail; display:none below 1200px). */
   function renderRail() {
     const rail = $('rail'); if (!rail) return;
@@ -228,7 +276,7 @@
     const t = S.subject, m = S.match;
     const who = t ? [S.wholeTeam ? 'the whole team' : '', ...[...S.players].map(n => { const p = (t.roster || []).find(x => x.member_number === n); return p ? esc(p.name) : ''; }).filter(Boolean), (S.unknownOn && $('unknown') && $('unknown').value.trim()) ? 'someone unnamed' : ''].filter(Boolean).join(', ') : '';
     const lab = code => (BEHAVIOURS.find(b => b[0] === code) || [])[1] || code;
-    rail.innerHTML = '<div class="spm-rail-card"><h3>Your report so far</h3><dl>'
+    rail.innerHTML = '<div class="spm-rail-card"><h3>' + (S.kind === 'kudos' ? 'Your shout-out so far' : 'Your report so far') + '</h3><dl>'
       + row('Team', t ? esc(t.label || t.team_name) + (t.night ? ' \u00b7 ' + esc(t.night) : '') : '')
       + row('When', m ? 'Week ' + esc(S.week) + ' \u00b7 ' + esc(fmtDate(m.date)) + (m.venue ? ' \u00b7 ' + esc(m.venue) : '') : (t ? 'not during a match' : ''))
       + row('Who', who)
@@ -242,6 +290,13 @@
     /* Name every unmet condition — six of them used to fail silently and the operator hit a dead button.
        The narrative is required but NEVER measured (operator: "dont put a min char count", 2026-09-18). */
     const missing = [];
+    if (S.kind === 'kudos') {
+      if (!(S.wholeTeam || S.players.size > 0)) missing.push('who deserves it');
+      if (!S.qualities.size && !story.length) missing.push('what they did well');
+      if ($('need')) $('need').innerHTML = missing.length ? '<b>Still needed:</b> ' + missing.join(' &middot; ') : '';
+      if ($('submit')) $('submit').disabled = !!missing.length;
+      return;
+    }
     if (!whoOk()) missing.push('who was involved');
     if (!story.length) missing.push('what happened');
     if (!S.severity) missing.push('how bad it was');
